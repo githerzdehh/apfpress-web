@@ -37,7 +37,7 @@
                 @endif
             </a>
             @endforeach
-            <p class="hero-library-caption"><span>Current catalogue</span>{{ $statistics['titles'] }} published titles</p>
+            <p class="hero-library-caption"><span>Current catalogue</span><span>{{ $statistics['titles'] }} published titles</span></p>
         </div>
         @else
         <aside class="hero-note"><p>Academic publishing should expand the conversation—not narrow it.</p><span class="eyebrow">The APF commitment</span></aside>

@@ -49,6 +49,12 @@ async function fontSize(page: Page, selector: string): Promise<number> {
     return page.locator(selector).first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
 }
 
+async function elementBox(page: Page, selector: string): Promise<{ x: number; y: number; width: number; height: number }> {
+    const box = await page.locator(selector).first().boundingBox();
+    expect(box, `${selector} should have a rendered box`).not.toBeNull();
+    return box!;
+}
+
 test('homepage renders the editorial design at every supported viewport', async ({ page }, testInfo: TestInfo) => {
     const monitor = monitorBrowser(page);
     const response = await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -65,6 +71,10 @@ test('homepage renders the editorial design at every supported viewport', async 
     await expect(page.locator('.hero-grid')).toHaveCSS('display', 'grid');
     await expect(page.locator('.hero')).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(page.locator('.hero-library-field')).toHaveCount(0);
+    await expect(page.locator('.hero h1 em')).toHaveCSS('color', 'rgb(0, 80, 160)');
+    await expect(page.locator('.hero .button').first()).toHaveCSS('background-color', 'rgb(0, 80, 160)');
+    await expect(page.locator('.section-dark').first()).toHaveCSS('background-color', 'rgb(8, 47, 73)');
+    await expect(page.locator('.hero-library-caption')).toHaveCSS('writing-mode', 'horizontal-tb');
 
     const bodyFont = await page.locator('body').evaluate((element) => getComputedStyle(element).fontFamily);
     expect(bodyFont.toLowerCase()).toContain('inter');
@@ -75,12 +85,18 @@ test('homepage renders the editorial design at every supported viewport', async 
     const sectionMaximums = { desktop: 52, 'tablet-landscape': 33, tablet: 33, mobile: 36, 'mobile-small': 36 } as const;
     const manifestoMaximums = { desktop: 51, 'tablet-landscape': 45, tablet: 34, mobile: 31, 'mobile-small': 31 } as const;
     const footerMaximums = { desktop: 64, 'tablet-landscape': 38, tablet: 36, mobile: 36, 'mobile-small': 36 } as const;
+    const heroHeightMaximums = { desktop: 700, 'tablet-landscape': 700, tablet: 1050, mobile: 1050, 'mobile-small': 1150 } as const;
     const project = testInfo.project.name as keyof typeof heroMaximums;
 
     expect(await fontSize(page, '.hero h1')).toBeLessThanOrEqual(heroMaximums[project]);
     expect(await fontSize(page, '.section-heading h2')).toBeLessThanOrEqual(sectionMaximums[project]);
     expect(await fontSize(page, '.manifesto')).toBeLessThanOrEqual(manifestoMaximums[project]);
     expect(await fontSize(page, '.footer-statement > p:last-child')).toBeLessThanOrEqual(footerMaximums[project]);
+    expect((await elementBox(page, '.hero')).height).toBeLessThanOrEqual(heroHeightMaximums[project]);
+
+    const captionBox = await elementBox(page, '.hero-library-caption');
+    const firstBookTop = await page.locator('.hero-book').evaluateAll((books) => Math.min(...books.map((book) => book.getBoundingClientRect().top)));
+    expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(firstBookTop + 1);
     await expectImagesLoaded(page, '.hero-book img');
     await expectNoHorizontalOverflow(page);
 
@@ -88,13 +104,25 @@ test('homepage renders the editorial design at every supported viewport', async 
         await expect(page.locator('#main-navigation')).toBeVisible();
         await expect(page.locator('[data-mobile-nav] button')).toBeHidden();
     } else {
-        const toggle = page.locator('[data-mobile-nav] button');
+        const toggle = page.locator('[data-mobile-nav] button').first();
+        const containerBox = await elementBox(page, '.site-header .container');
+        const logoBox = await elementBox(page, '.site-header .official-logo');
+        const actionBox = await elementBox(page, '.nav-actions');
+        expect(Math.abs((actionBox.x + actionBox.width) - (containerBox.x + containerBox.width))).toBeLessThanOrEqual(1);
+        expect(actionBox.x - (logoBox.x + logoBox.width)).toBeGreaterThan(24);
         await expect(toggle).toBeVisible();
         await toggle.click();
         await expect(toggle).toHaveAttribute('aria-expanded', 'true');
         await expect(page.locator('#main-navigation')).toHaveClass(/is-open/);
+        await expect(page.locator('#main-navigation')).toBeVisible();
+        await expect(page.locator('.mobile-nav-backdrop')).toBeVisible();
+        await expect(page.locator('#main-navigation a').first()).toBeFocused();
+        const drawerBox = await elementBox(page, '#main-navigation');
+        expect(drawerBox.width).toBeLessThan(page.viewportSize()!.width);
+        expect(Math.abs(drawerBox.x + drawerBox.width - page.viewportSize()!.width)).toBeLessThanOrEqual(1);
         await page.keyboard.press('Escape');
         await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(toggle).toBeFocused();
     }
 
     if (testInfo.project.name === 'desktop') {
@@ -120,6 +148,15 @@ test('catalogue, book, content, and contact pages form a coherent public journey
     expect(catalogueColumns).toBe(expectedColumns);
     const pageTitleMaximums = { desktop: 71, 'tablet-landscape': 46, tablet: 46, mobile: 47, 'mobile-small': 47 } as const;
     expect(await fontSize(page, '.page-hero h1')).toBeLessThanOrEqual(pageTitleMaximums[testInfo.project.name as keyof typeof pageTitleMaximums]);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const pageHeroHeightMaximums = { desktop: 450, 'tablet-landscape': 460, tablet: 550, mobile: 510, 'mobile-small': 560 } as const;
+    const headerBox = await elementBox(page, '.site-header');
+    const breadcrumbBox = await elementBox(page, '.breadcrumbs');
+    const pageHeroBox = await elementBox(page, '.page-hero');
+    const catalogueBox = await elementBox(page, '.catalogue-section');
+    expect(Math.abs(breadcrumbBox.y - (headerBox.y + headerBox.height))).toBeLessThanOrEqual(1);
+    expect(pageHeroBox.height).toBeLessThanOrEqual(pageHeroHeightMaximums[testInfo.project.name as keyof typeof pageHeroHeightMaximums]);
+    expect(Math.abs(catalogueBox.y - (pageHeroBox.y + pageHeroBox.height))).toBeLessThanOrEqual(1);
     await expectNoHorizontalOverflow(page);
     if (testInfo.project.name === 'desktop') {
         await page.screenshot({ path: testInfo.outputPath('catalogue.png'), fullPage: true });

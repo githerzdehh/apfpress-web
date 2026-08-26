@@ -6,7 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', 'APF Press | Independent Canadian Academic Publisher')</title>
     <meta name="description" content="@yield('description', 'APF Press publishes bold Canadian scholarship, critical perspectives, and under-represented voices in social justice and human rights.')">
-    <meta name="theme-color" content="#12372a">
+    <meta name="theme-color" content="#082f49">
     @if(View::hasSection('noindex'))<meta name="robots" content="noindex,nofollow">@endif
     <link rel="canonical" href="@yield('canonical', url()->current())">
     <meta property="og:type" content="@yield('og_type', 'website')">
