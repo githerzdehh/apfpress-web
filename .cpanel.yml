@@ -1,0 +1,10 @@
+---
+deployment:
+  tasks:
+    - composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+    - php artisan down --retry=30 || true
+    - php artisan migrate --force
+    - php artisan optimize
+    - php artisan storage:link || true
+    - php artisan queue:restart || true
+    - php artisan up

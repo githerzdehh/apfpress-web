@@ -1,0 +1,6 @@
+User-agent: *
+Disallow:
+Disallow: /admin
+Disallow: /account
+Disallow: /checkout
+Sitemap: https://apfpress.com/sitemap.xml

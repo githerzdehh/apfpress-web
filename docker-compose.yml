@@ -1,0 +1,56 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    working_dir: /var/www/html
+    command: php artisan serve --host=0.0.0.0 --port=8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+
+  vite:
+    image: node:24-alpine
+    working_dir: /var/www/html
+    command: sh scripts/vite-dev.sh
+    environment:
+      VITE_APP_ORIGIN: ${VITE_APP_ORIGIN:-http://localhost:8080}
+      VITE_DEV_PORT: ${VITE_DEV_PORT:-5174}
+    ports:
+      - "${VITE_DEV_PORT:-5174}:${VITE_DEV_PORT:-5174}"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - app
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: apfpress
+      MYSQL_USER: apfpress
+      MYSQL_PASSWORD: apfpress_local
+      MYSQL_ROOT_PASSWORD: apfpress_root_local
+    ports:
+      - "3307:3306"
+    volumes:
+      - apfpress_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-papfpress_root_local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+volumes:
+  apfpress_mysql:

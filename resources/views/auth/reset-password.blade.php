@@ -1,0 +1,6 @@
+@extends('layouts.app')
+@section('title', 'Choose a New Password | APF Press')
+@section('noindex', 'true')
+@section('content')
+<section class="auth-shell"><div class="container auth-grid"><aside class="auth-aside"><p class="eyebrow eyebrow-gold">Account security</p><blockquote>Choose a strong key<br><em>for your APF library.</em></blockquote><p>Your new password should be unique to this account.</p></aside><div class="auth-card form-card"><div class="form-card-heading"><p class="eyebrow">Account access</p><h1>Choose a new password.</h1></div><form method="post" action="{{ route('password.update') }}">@csrf<input type="hidden" name="token" value="{{ $token }}"><div class="field"><label for="email">Email address</label><input class="input" id="email" name="email" type="email" value="{{ old('email', $email) }}" required></div><div class="field"><label for="password">New password</label><input class="input" id="password" name="password" type="password" autocomplete="new-password" required></div><div class="field"><label for="password_confirmation">Confirm password</label><input class="input" id="password_confirmation" name="password_confirmation" type="password" autocomplete="new-password" required></div><button class="button form-submit" type="submit">Save new password <span aria-hidden="true">→</span></button></form></div></div></section>
+@endsection
