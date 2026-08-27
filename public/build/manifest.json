@@ -1,6 +1,6 @@
 {
-  "_http-CSjwkV2O.js": {
-    "file": "assets/http-CSjwkV2O.js",
+  "_http-CWrpivBA.js": {
+    "file": "assets/http-CWrpivBA.js",
     "name": "http"
   },
   "node_modules/@fontsource-variable/inter/files/inter-cyrillic-ext-wght-normal.woff2": {
@@ -56,7 +56,7 @@
     "src": "node_modules/@fontsource-variable/source-serif-4/files/source-serif-4-vietnamese-wght-normal.woff2"
   },
   "resources/css/app.css": {
-    "file": "assets/app-DEwOgoX_.css",
+    "file": "assets/app-DGT9utA6.css",
     "name": "app",
     "names": [
       "app.css"
@@ -80,21 +80,21 @@
     ]
   },
   "resources/js/admin.ts": {
-    "file": "assets/admin-D8B6Fson.js",
+    "file": "assets/admin-D8xFF8QG.js",
     "name": "admin",
     "src": "resources/js/admin.ts",
     "isEntry": true,
     "imports": [
-      "_http-CSjwkV2O.js"
+      "_http-CWrpivBA.js"
     ]
   },
   "resources/js/public.ts": {
-    "file": "assets/public-C0M0foWn.js",
+    "file": "assets/public-CC2KY_kN.js",
     "name": "public",
     "src": "resources/js/public.ts",
     "isEntry": true,
     "imports": [
-      "_http-CSjwkV2O.js"
+      "_http-CWrpivBA.js"
     ]
   }
 }
