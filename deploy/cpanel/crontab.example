@@ -1,0 +1,4 @@
+# Add these through cPanel > Cron Jobs after replacing MAILTO with the operations address.
+MAILTO=orders@apfpress.com
+* * * * * /usr/bin/flock -n /home/apfpress/.apfpress-scheduler.lock /opt/cpanel/ea-php83/root/usr/bin/php /home/apfpress/repositories/apfpress-web/artisan schedule:run >/dev/null 2>&1 || echo "APF Press scheduler failed"
+* * * * * /usr/bin/flock -n /home/apfpress/.apfpress-queue.lock /opt/cpanel/ea-php83/root/usr/bin/php /home/apfpress/repositories/apfpress-web/artisan queue:work --stop-when-empty --tries=3 --timeout=90 --max-time=50 >/dev/null 2>&1 || echo "APF Press queue worker failed"

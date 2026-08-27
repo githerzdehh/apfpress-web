@@ -4,6 +4,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+bash -n scripts/cpanel-deploy.sh
+
 if docker compose version >/dev/null 2>&1; then
     APF_COMPOSE=(docker compose)
 elif command -v docker-compose >/dev/null 2>&1; then
@@ -20,6 +22,7 @@ fi
 
 "${APF_COMPOSE[@]}" run --rm --no-deps vite npm run build
 "${APF_COMPOSE[@]}" run --rm --no-deps vite npm test
+"${APF_COMPOSE[@]}" run --rm app php -l deploy/cpanel/public-index.php
 "${APF_COMPOSE[@]}" run --rm app php artisan test
 "${APF_COMPOSE[@]}" run --rm app php artisan route:list --except-vendor
 
@@ -44,4 +47,4 @@ if ! grep -Fq "Access-Control-Allow-Origin: ${APF_APP_ORIGIN}" "$APF_CORS_HEADER
     exit 1
 fi
 
-echo "Build, automated tests, asset delivery, health endpoint, and catalogue API all passed."
+echo "Deployment files, build, automated tests, asset delivery, health endpoint, and catalogue API all passed."
