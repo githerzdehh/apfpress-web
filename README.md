@@ -8,7 +8,8 @@ The public pages are rendered by Laravel for reliable indexing, metadata, and fi
 
 - `dev` is the active development and review branch.
 - `main` is the production/deployment branch. Merge tested work into `main`; do not develop directly on it.
-- cPanel Git deployment reads [.cpanel.yml](.cpanel.yml). The cPanel repository root must be the application root, and the domain document root must point to `public/`.
+- GitHub Actions builds the frontend and tests Laravel 13 on PHP 8.3 and MySQL 5.7 for pushes and pull requests targeting `dev` or `main`.
+- cPanel Git deployment reads [.cpanel.yml](.cpanel.yml). On the APF Press server the private application checkout lives outside `public_html`; a guarded deployment publishes only Laravel's `public/` files.
 - Production frontend assets in `public/build/` are committed because the target cPanel environment does not require Node.js.
 
 This is proprietary client software. Secrets, private manuscripts, and digital editions are excluded from Git.
@@ -186,17 +187,19 @@ Use sandbox credentials and provider CLI/test tools before enabling live mode.
 
 ## cPanel production checklist
 
-1. Upgrade the selected cPanel PHP version to 8.3 or 8.4 with `bcmath`, `intl`, `mbstring`, `pdo_mysql`, and `zip` enabled.
-2. Create a MySQL database and least-privileged application user.
-3. Clone the `main` branch through cPanel Git and point the domain document root at the repository's `public/` directory.
+The complete, server-specific walkthrough is in [docs/CPANEL_DEPLOYMENT.md](docs/CPANEL_DEPLOYMENT.md). The current CentOS 7/cPanel 110 host uses patched EasyApache PHP 8.3 as a temporary bridge and must move to a supported operating system before January 1, 2027.
+
+1. Install EasyApache PHP 8.3 alongside the existing versions with `bcmath`, `curl`, `intl`, `mbstring`, `mysqlnd`, `opcache`, `process`, `xml`, and `zip`; do not change other virtual hosts.
+2. Create separate staging and production MySQL databases with least-privileged application users.
+3. Clone the private `main` branch through cPanel Git to `/home/apfpress/repositories/apfpress-web`; use a read-only GitHub deploy key, not a personal token.
 4. Create `.env` from `.env.example`; set `APP_ENV=production`, `APP_DEBUG=false`, the canonical HTTPS `APP_URL`, MySQL credentials, SMTP, and a new `APP_KEY`.
 5. On the first deployment only, run `php artisan db:seed --force` after migration to create the content and catalogue snapshot. With `APF_IMPORT_DOWNLOAD_MEDIA=true`, cover files are copied locally and their original URLs are retained only as provenance.
 6. Ensure `storage/` and `bootstrap/cache/` are writable by the PHP account. Keep `storage/app/private` outside public access.
-7. Set a real queue cron/worker strategy if email volume warrants it. At minimum run the scheduler each minute: `php artisan schedule:run`.
+7. Install the scheduler and guarded queue-worker cron entries from `deploy/cpanel/crontab.example`.
 8. Configure Stripe and PayPal webhooks, then run sandbox orders for print and digital editions.
 9. Review and publish the privacy, terms, and refund policy drafts. They intentionally return 404 until approved.
 10. Review imported metadata flags, exact stock, ISBNs, publication dates, covers, descriptions, tax nexus, and shipping rates before launch.
-11. Merge the release into `main`; cPanel runs locked Composer installation, migrations, optimization, storage linking, and maintenance-mode handoff.
+11. Require the GitHub `Laravel 13 / PHP 8.3 / MySQL 5.7` check on `main`, merge the release only after it passes, then let cPanel run the guarded deployment. Production publishing requires an explicit target and public-root marker after WordPress is archived.
 
 ## API surface
 
