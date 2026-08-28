@@ -8,10 +8,13 @@
 
 @push('structured-data')
 @php
+    $authors = $catalogItem->contributors->filter(fn($contributor) => $contributor->pivot->role === 'author');
+    $secondaryCredits = $catalogItem->contributors->reject(fn($contributor) => $contributor->pivot->role === 'author')->groupBy(fn($contributor) => $contributor->pivot->role);
+    $creditLabels = ['editor' => 'Edited by', 'translator' => 'Translated by', 'illustrator' => 'Illustrated by', 'foreword' => 'Foreword by', 'contributor' => 'With contributions from'];
     $schemaOffering = $catalogItem->offerings->firstWhere('price_amount', '!==', null) ?: $catalogItem->offerings->first();
     $schema = ['@context' => 'https://schema.org', '@type' => 'Book', 'name' => $catalogItem->title, 'description' => $catalogItem->summary, 'url' => route('catalog.show', $catalogItem->slug), 'publisher' => ['@type' => 'Organization', 'name' => 'APF Press']];
     if ($catalogItem->cover?->url) $schema['image'] = $catalogItem->cover->url;
-    if ($catalogItem->contributors->isNotEmpty()) $schema['author'] = $catalogItem->contributors->map(fn($author) => ['@type' => 'Person', 'name' => $author->name])->values();
+    if ($authors->isNotEmpty()) $schema['author'] = $authors->map(fn($author) => ['@type' => 'Person', 'name' => $author->name])->values();
     if ($schemaOffering?->bookEdition?->isbn_13) $schema['isbn'] = $schemaOffering->bookEdition->isbn_13;
     if ($schemaOffering?->price_amount !== null) $schema['offers'] = ['@type' => 'Offer', 'priceCurrency' => $schemaOffering->currency, 'price' => number_format($schemaOffering->price_amount / 100, 2, '.', ''), 'availability' => $schemaOffering->isAvailable() ? 'https://schema.org/InStock' : 'https://schema.org/PreOrder', 'url' => route('catalog.show', $catalogItem->slug)];
     $primaryEdition = $catalogItem->offerings->first()?->bookEdition;
@@ -36,7 +39,8 @@
                 <p class="eyebrow">An APF Press title</p>
                 <h1>{{ $catalogItem->title }}</h1>
                 @if($catalogItem->subtitle)<p class="detail-subtitle">{{ $catalogItem->subtitle }}</p>@endif
-                <p class="author-line">{{ $catalogItem->contributors->isNotEmpty() ? 'By '.$catalogItem->contributors->pluck('name')->join(', ') : 'Author information forthcoming' }}</p>
+                <p class="author-line">{{ $authors->isNotEmpty() ? 'By '.$authors->pluck('name')->join(', ') : 'Author information forthcoming' }}</p>
+                @foreach($secondaryCredits as $role => $contributors)<p class="contributor-line"><strong>{{ $creditLabels[$role] ?? ucfirst($role).' by' }}</strong> {{ $contributors->pluck('name')->join(', ') }}</p>@endforeach
                 @if($catalogItem->summary)<p class="detail-summary">{{ $catalogItem->summary }}</p>@endif
 
                 <div class="purchase-panel">

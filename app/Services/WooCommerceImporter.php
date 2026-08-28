@@ -143,18 +143,26 @@ class WooCommerceImporter
                 $sku = trim((string) ($source['sku'] ?? '')) ?: ($existingOffering?->sku ?: 'APF-WOO-'.str_pad($sourceId, 5, '0', STR_PAD_LEFT));
                 $hasSourcePrice = ($source['price_amount'] ?? null) !== null;
                 $isPurchasable = (bool) ($source['purchasable'] ?? false) && $effectivePrice !== null;
+                $hasCurrentDigitalAsset = $existingOffering?->digitalAssets()
+                    ->where('active', true)->where('is_current', true)->exists() ?? false;
                 $purchaseMode = $hasSourcePrice
                     ? ($isPurchasable && $kind !== 'ebook' ? 'online' : 'inquiry')
                     : ($existingOffering?->purchase_mode ?: 'inquiry');
+                if ($kind === 'ebook') {
+                    $purchaseMode = $hasCurrentDigitalAsset && $existingOffering?->purchase_mode === 'online'
+                        ? 'online'
+                        : 'inquiry';
+                }
                 $offering = Offering::query()->updateOrCreate(
                     ['catalog_item_id' => $item->id, 'kind' => $kind],
                     [
+                        'position' => $existingOffering?->position ?? ((int) $item->offerings()->max('position') + ($item->offerings()->exists() ? 1 : 0)),
                         'name' => $kind === 'ebook' ? 'Digital edition' : 'Print edition',
                         'sku' => $sku,
                         'price_amount' => $effectivePrice,
                         'currency' => strtoupper((string) ($source['currency'] ?? 'CAD')),
-                        // Imported ebooks stay inquiry-only until a private digital asset is attached.
-                        'purchase_mode' => $kind === 'ebook' && ! $existingOffering?->digitalAssets()->where('active', true)->exists() ? 'inquiry' : $purchaseMode,
+                        // Imported ebooks stay inquiry-only until staff attach a current private asset and enable online sale.
+                        'purchase_mode' => $purchaseMode,
                         'tax_class' => 'books',
                         'active' => true,
                         'access_duration_days' => $kind === 'ebook' ? (int) config('apf.digital_access_days', 365) : null,

@@ -3,121 +3,183 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\SaveCatalogItemRequest;
+use App\Http\Resources\AdminCatalogItemResource;
 use App\Models\BookDetail;
 use App\Models\BookEdition;
 use App\Models\CatalogItem;
+use App\Models\Category;
 use App\Models\Contributor;
 use App\Models\Inventory;
 use App\Models\Offering;
+use App\Services\CatalogMetadata;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 
 class CatalogController extends Controller
 {
+    private const RELATIONS = [
+        'contributors', 'categories', 'media', 'bookDetails',
+        'offerings.bookEdition', 'offerings.inventory', 'offerings.digitalAssets',
+    ];
+
     public function index(Request $request): JsonResponse
     {
-        $items = CatalogItem::query()->with(['contributors', 'offerings.bookEdition', 'offerings.inventory'])
-            ->when($request->string('q')->toString(), fn ($query, $search) => $query->where('title', 'like', '%'.$search.'%'))
-            ->when($request->string('status')->toString(), fn ($query, $status) => $query->where('status', $status))
-            ->orderByDesc('updated_at')->paginate(25);
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', 'in:draft,published,archived'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+        $items = CatalogItem::query()->where('type', 'book')->with(self::RELATIONS)
+            ->when($filters['q'] ?? null, function ($query, string $search): void {
+                $query->where(function ($query) use ($search): void {
+                    $query->where('title', 'like', '%'.$search.'%')
+                        ->orWhere('slug', 'like', '%'.$search.'%')
+                        ->orWhereHas('contributors', fn ($query) => $query->where('name', 'like', '%'.$search.'%'));
+                });
+            })
+            ->when($filters['status'] ?? null, fn ($query, string $status) => $query->where('status', $status))
+            ->orderByDesc('updated_at')->paginate(25)->withQueryString();
 
-        return response()->json($items);
+        return AdminCatalogItemResource::collection($items)->response();
+    }
+
+    public function options(): JsonResponse
+    {
+        return response()->json([
+            'contributors' => Contributor::query()->orderBy('name')->get(['id', 'name']),
+            'categories' => Category::query()->orderBy('name')->get(['id', 'name', 'slug']),
+            'contributor_roles' => ['author', 'editor', 'translator', 'illustrator', 'foreword', 'contributor'],
+        ]);
     }
 
     public function show(CatalogItem $catalogItem): JsonResponse
     {
-        return response()->json($catalogItem->load(['contributors', 'categories', 'media', 'bookDetails', 'offerings.bookEdition', 'offerings.inventory']));
+        abort_unless($catalogItem->type === 'book', 404);
+
+        return (new AdminCatalogItemResource($catalogItem->load(self::RELATIONS)))->response();
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(SaveCatalogItemRequest $request, CatalogMetadata $metadata): JsonResponse
     {
-        $data = $this->validateItem($request);
-        $item = DB::transaction(fn () => $this->persist(new CatalogItem, $data, $request->user()->id));
+        $item = DB::transaction(fn () => $this->persist(new CatalogItem, $request->validated(), $request->user()->id, $metadata));
 
-        return response()->json($item, 201);
+        return (new AdminCatalogItemResource($item))->response()->setStatusCode(201);
     }
 
-    public function update(Request $request, CatalogItem $catalogItem): JsonResponse
+    public function update(SaveCatalogItemRequest $request, CatalogItem $catalogItem, CatalogMetadata $metadata): JsonResponse
     {
-        $data = $this->validateItem($request, $catalogItem);
-        $item = DB::transaction(fn () => $this->persist($catalogItem, $data, $request->user()->id));
+        abort_unless($catalogItem->type === 'book', 404);
+        $item = DB::transaction(fn () => $this->persist($catalogItem, $request->validated(), $request->user()->id, $metadata));
 
-        return response()->json($item);
+        return (new AdminCatalogItemResource($item))->response();
     }
 
-    private function validateItem(Request $request, ?CatalogItem $item = null): array
+    private function persist(CatalogItem $item, array $data, int $userId, CatalogMetadata $metadata): CatalogItem
     {
-        return $request->validate([
-            'type' => ['required', Rule::in(['book', 'product', 'service'])],
-            'slug' => ['nullable', 'string', 'max:255', Rule::unique('catalog_items')->ignore($item)],
-            'title' => ['required', 'string', 'max:255'], 'subtitle' => ['nullable', 'string', 'max:255'],
-            'summary' => ['nullable', 'string', 'max:2000'], 'description' => ['nullable', 'string'],
-            'status' => ['required', Rule::in(['draft', 'published', 'archived'])], 'featured' => ['boolean'],
-            'seo_title' => ['nullable', 'string', 'max:70'], 'seo_description' => ['nullable', 'string', 'max:320'],
-            'author' => ['nullable', 'string', 'max:255'],
-            'offering.kind' => ['nullable', Rule::in(['print_book', 'ebook', 'physical_product', 'digital_product', 'service'])],
-            'offering.name' => ['required_with:offering.kind', 'nullable', 'string', 'max:120'], 'offering.sku' => ['required_if:offering.purchase_mode,online', 'nullable', 'string', 'max:120', Rule::unique('offerings', 'sku')->ignore($item?->offerings()->first())],
-            'offering.price_amount' => ['required_if:offering.purchase_mode,online', 'nullable', 'integer', 'min:0'], 'offering.purchase_mode' => ['nullable', Rule::in(['online', 'inquiry', 'unavailable'])],
-            'offering.format' => ['nullable', Rule::in(['paperback', 'hardcover', 'pdf', 'epub', 'other'])],
-            'offering.isbn_10' => ['nullable', 'string', 'size:10'], 'offering.isbn_13' => ['nullable', 'string', 'size:13'],
-            'offering.publication_date' => ['nullable', 'date'], 'offering.page_count' => ['nullable', 'integer', 'min:1'],
-            'offering.on_hand' => ['nullable', 'integer', 'min:0'], 'offering.track_inventory' => ['boolean'],
-        ]);
-    }
+        $before = $item->exists
+            ? (new AdminCatalogItemResource($item->load(self::RELATIONS)))->resolve()
+            : null;
+        $bookDetails = $data['book_details'];
+        $contributors = $data['contributors'];
+        $categories = $data['categories'];
+        $offerings = $data['offerings'];
+        unset($data['book_details'], $data['contributors'], $data['categories'], $data['offerings']);
 
-    private function persist(CatalogItem $item, array $data, int $userId): CatalogItem
-    {
-        $before = $item->exists ? $item->toArray() : null;
-        $offeringData = $data['offering'] ?? [];
-        unset($data['offering'], $data['author']);
-        $data['slug'] = $data['slug'] ?: Str::slug($data['title']);
+        $data['slug'] = $data['slug'] ?: $this->uniqueSlug($data['title'], $item->exists ? $item->id : null);
         $data['published_at'] = $data['status'] === 'published' ? ($item->published_at ?: now()) : null;
-        $data['metadata_flags'] = $this->metadataFlags($offeringData, request()->input('author'));
         $item->fill($data)->save();
+        BookDetail::query()->updateOrCreate(['catalog_item_id' => $item->id], $bookDetails);
 
-        if ($item->type === 'book') {
-            BookDetail::query()->firstOrCreate(['catalog_item_id' => $item->id], ['publisher' => 'APF Press']);
+        $contributorSync = [];
+        foreach ($contributors as $position => $input) {
+            $contributor = ! empty($input['id'])
+                ? Contributor::query()->findOrFail($input['id'])
+                : Contributor::query()->firstOrCreate(
+                    ['slug' => Str::slug($input['name']) ?: 'contributor-'.Str::lower(Str::random(8))],
+                    ['name' => $input['name']],
+                );
+            $contributorSync[$contributor->id] = ['role' => $input['role'], 'position' => $position];
         }
+        $item->contributors()->sync($contributorSync);
 
-        if ($author = trim((string) request()->input('author'))) {
-            $contributor = Contributor::query()->firstOrCreate(['slug' => Str::slug($author)], ['name' => $author]);
-            $item->contributors()->sync([$contributor->id => ['role' => 'author', 'position' => 0]]);
-        }
-
-        if (! empty($offeringData['kind'])) {
-            $offering = Offering::query()->updateOrCreate(
-                ['catalog_item_id' => $item->id, 'kind' => $offeringData['kind']],
-                collect($offeringData)->only(['name', 'sku', 'price_amount', 'purchase_mode'])->all() + ['currency' => config('apf.currency'), 'tax_class' => $item->type === 'book' ? 'books' : 'standard', 'active' => true],
-            );
-            if ($item->type === 'book') {
-                BookEdition::query()->updateOrCreate(['offering_id' => $offering->id], collect($offeringData)->only(['format', 'isbn_10', 'isbn_13', 'publication_date', 'page_count'])->all() + ['format' => $offeringData['format'] ?? 'other']);
+        $categoryIds = collect($categories)->map(function (array $input): int {
+            if (! empty($input['id'])) {
+                return (int) $input['id'];
             }
-            Inventory::query()->updateOrCreate(['offering_id' => $offering->id], [
-                'on_hand' => $offeringData['on_hand'] ?? 0, 'track_inventory' => $offeringData['track_inventory'] ?? false,
-            ]);
+
+            return Category::query()->firstOrCreate(
+                ['slug' => Str::slug($input['name']) ?: 'category-'.Str::lower(Str::random(8))],
+                ['name' => $input['name']],
+            )->id;
+        })->all();
+        $item->categories()->sync($categoryIds);
+
+        $keptOfferingIds = [];
+        foreach ($offerings as $position => $input) {
+            $offering = ! empty($input['id'])
+                ? $item->offerings()->whereKey($input['id'])->firstOrFail()
+                : new Offering(['catalog_item_id' => $item->id]);
+            $edition = $input['edition'];
+            $inventory = $input['inventory'];
+            $offering->fill([
+                'position' => $position,
+                'kind' => $input['kind'],
+                'name' => $input['name'],
+                'sku' => $input['sku'] ?? null,
+                'price_amount' => $input['price_amount'] ?? null,
+                'currency' => config('apf.currency'),
+                'purchase_mode' => $input['purchase_mode'],
+                'tax_class' => 'books',
+                'active' => $input['active'],
+                'access_duration_days' => $input['kind'] === 'ebook'
+                    ? ($input['access_duration_days'] ?? config('apf.digital_access_days'))
+                    : null,
+            ])->save();
+            $keptOfferingIds[] = $offering->id;
+
+            BookEdition::query()->updateOrCreate(['offering_id' => $offering->id], $edition);
+            $savedInventory = Inventory::query()->firstOrNew(['offering_id' => $offering->id]);
+            $savedInventory->fill([
+                'on_hand' => $inventory['on_hand'],
+                'low_stock_threshold' => $inventory['low_stock_threshold'],
+                'track_inventory' => $inventory['track_inventory'],
+                'allow_backorder' => $inventory['allow_backorder'],
+            ])->save();
         }
+        $item->offerings()->whereNotIn('id', $keptOfferingIds)->update(['active' => false]);
+
+        $item->load(self::RELATIONS);
+        $item->forceFill(['metadata_flags' => $metadata->assess($item)['flags']])->save();
+        $item = $item->fresh(self::RELATIONS);
+        $after = (new AdminCatalogItemResource($item))->resolve();
 
         DB::table('audit_logs')->insert([
-            'user_id' => $userId, 'action' => $before ? 'catalog.updated' : 'catalog.created',
-            'auditable_type' => CatalogItem::class, 'auditable_id' => $item->id,
-            'before' => $before ? json_encode($before) : null, 'after' => json_encode($item->fresh()->toArray()),
-            'ip_address' => request()->ip(), 'created_at' => now(), 'updated_at' => now(),
+            'user_id' => $userId,
+            'action' => $before ? 'catalog.updated' : 'catalog.created',
+            'auditable_type' => CatalogItem::class,
+            'auditable_id' => $item->id,
+            'before' => $before ? json_encode($before, JSON_THROW_ON_ERROR) : null,
+            'after' => json_encode($after, JSON_THROW_ON_ERROR),
+            'ip_address' => request()->ip(),
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
-        return $item->fresh(['contributors', 'offerings.bookEdition', 'offerings.inventory']);
+        return $item;
     }
 
-    private function metadataFlags(array $offering, ?string $author): array
+    private function uniqueSlug(string $title, ?int $exceptId = null): string
     {
-        return array_values(array_filter([
-            trim((string) $author) === '' ? 'missing_author' : null,
-            empty($offering['isbn_10']) && empty($offering['isbn_13']) ? 'missing_isbn' : null,
-            empty($offering['publication_date']) ? 'missing_publication_date' : null,
-            ! isset($offering['price_amount']) ? 'missing_price' : null,
-            ! isset($offering['on_hand']) ? 'missing_stock_count' : null,
-        ]));
+        $base = Str::slug($title) ?: 'catalogue-title';
+        $slug = $base;
+        $suffix = 2;
+        while (CatalogItem::query()->where('slug', $slug)->when($exceptId, fn ($query) => $query->whereKeyNot($exceptId))->exists()) {
+            $slug = $base.'-'.$suffix++;
+        }
+
+        return $slug;
     }
 }

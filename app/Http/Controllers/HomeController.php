@@ -11,7 +11,11 @@ class HomeController extends Controller
     public function __invoke(): View
     {
         $featured = CatalogItem::query()->published()
-            ->with(['contributors', 'media', 'offerings.inventory'])
+            ->with([
+                'contributors', 'media',
+                'offerings' => fn ($query) => $query->active()->orderBy('position'),
+                'offerings.inventory',
+            ])
             ->where('type', 'book')
             ->orderByDesc('featured')
             ->orderByDesc('published_at')

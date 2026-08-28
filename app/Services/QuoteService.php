@@ -10,7 +10,12 @@ class QuoteService
 {
     public function quote(Cart $cart, string $country, ?string $region = null): array
     {
-        $cart->loadMissing('items.offering');
+        $cart->loadMissing(['items.offering.inventory', 'items.offering.digitalAssets']);
+        foreach ($cart->items as $item) {
+            if (! $item->offering?->isAvailable()) {
+                throw ValidationException::withMessages(['cart' => 'An edition in your cart is no longer available. Remove it or choose another edition.']);
+            }
+        }
         $subtotal = $cart->items->sum(fn ($item) => $item->quantity * $item->offering->price_amount);
         $hasPhysical = $cart->items->contains(fn ($item) => in_array($item->offering->kind, ['print_book', 'physical_product'], true));
         $shipping = 0;

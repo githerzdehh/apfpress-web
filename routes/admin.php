@@ -18,6 +18,7 @@ Route::prefix('admin')->middleware(['auth', 'verified', 'role:owner,editor,fulfi
         Route::middleware('role:owner,editor')->group(function (): void {
             Route::get('/catalog', [AdminCatalogController::class, 'index']);
             Route::post('/catalog', [AdminCatalogController::class, 'store']);
+            Route::get('/catalog/options', [AdminCatalogController::class, 'options']);
             Route::get('/catalog/{catalogItem}', [AdminCatalogController::class, 'show']);
             Route::put('/catalog/{catalogItem}', [AdminCatalogController::class, 'update']);
             Route::post('/imports/preview', [ImportController::class, 'preview']);

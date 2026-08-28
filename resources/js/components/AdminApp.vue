@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { money } from '../lib/http';
+import CatalogueManager from './admin/CatalogueManager.vue';
 
 type Section = 'dashboard' | 'catalog' | 'import' | 'orders' | 'integrations' | 'settings';
 type NavigationItem = { id: Section; index: string; label: string; hint: string; visible: boolean };
@@ -11,15 +12,12 @@ const loading = ref(false);
 const error = ref('');
 const notice = ref('');
 const dashboard = ref<Record<string, number>>({});
-const catalog = ref<any[]>([]);
 const orders = ref<any[]>([]);
 const integrations = ref<any[]>([]);
 const settings = ref<any>({ shipping_zones: [], tax_rules: [] });
-const selected = ref<any | null>(null);
 const importPreview = ref<any | null>(null);
 const upload = ref<File | null>(null);
-const coverUpload = ref<File | null>(null);
-const digitalUpload = ref<File | null>(null);
+const catalogueManager = ref<{ confirmLeave: () => boolean } | null>(null);
 const integrationForms = reactive<Record<string, any>>({
     stripe: { environment: 'sandbox', enabled: false, credentials: { secret: '', webhook_secret: '' } },
     paypal: { environment: 'sandbox', enabled: false, credentials: { client_id: '', client_secret: '', webhook_id: '' } },
@@ -66,10 +64,10 @@ async function api(url: string, options: RequestInit = {}): Promise<any> {
 }
 
 async function navigate(next: Section): Promise<void> {
-    section.value = next; selected.value = null; notice.value = '';
+    if (section.value === 'catalog' && next !== 'catalog' && catalogueManager.value && !catalogueManager.value.confirmLeave()) return;
+    section.value = next; notice.value = ''; error.value = '';
     try {
         if (next === 'dashboard') dashboard.value = await api('/admin/api/dashboard');
-        if (next === 'catalog') catalog.value = (await api('/admin/api/catalog')).data;
         if (next === 'orders') orders.value = (await api('/admin/api/orders')).data;
         if (next === 'integrations') {
             integrations.value = await api('/admin/api/integrations');
@@ -77,42 +75,6 @@ async function navigate(next: Section): Promise<void> {
         }
         if (next === 'settings') settings.value = await api('/admin/api/commerce-settings');
     } catch (caught) { error.value = caught instanceof Error ? caught.message : 'Unable to load this section.'; }
-}
-
-function newItem(): void {
-    selected.value = { type: 'book', title: '', slug: '', summary: '', description: '', status: 'draft', featured: false, author: '', seo_title: '', seo_description: '', offering: { kind: 'print_book', name: 'Print edition', sku: '', price_amount: null, purchase_mode: 'inquiry', format: 'paperback', isbn_10: '', isbn_13: '', publication_date: '', page_count: null, on_hand: 0, track_inventory: false } };
-}
-
-async function editItem(id: number): Promise<void> {
-    const item = await api(`/admin/api/catalog/${id}`);
-    const offering = item.offerings?.[0] ?? {};
-    selected.value = { ...item, author: item.contributors?.[0]?.name ?? '', offering: { ...offering, ...(offering.book_edition ?? {}), on_hand: offering.inventory?.on_hand ?? 0, track_inventory: offering.inventory?.track_inventory ?? false } };
-}
-
-async function saveItem(): Promise<void> {
-    try {
-        const isNew = !selected.value.id;
-        const saved = await api(isNew ? '/admin/api/catalog' : `/admin/api/catalog/${selected.value.id}`, { method: isNew ? 'POST' : 'PUT', body: JSON.stringify(selected.value) });
-        const offering = saved.offerings?.[0] ?? {};
-        selected.value = { ...saved, author: saved.contributors?.[0]?.name ?? '', offering: { ...offering, ...(offering.book_edition ?? {}), on_hand: offering.inventory?.on_hand ?? 0, track_inventory: offering.inventory?.track_inventory ?? false } };
-        notice.value = 'Catalogue record saved.';
-        catalog.value = (await api('/admin/api/catalog')).data;
-    } catch (caught) { error.value = caught instanceof Error ? caught.message : 'Unable to save.'; }
-}
-
-async function uploadCover(): Promise<void> {
-    if (!selected.value?.id || !coverUpload.value) return;
-    const form = new FormData(); form.append('cover', coverUpload.value); form.append('alt_text', `${selected.value.title} book cover`);
-    try { await api(`/admin/api/catalog/${selected.value.id}/cover`, { method: 'POST', body: form }); notice.value = 'Cover image uploaded.'; }
-    catch (caught) { error.value = caught instanceof Error ? caught.message : 'Cover upload failed.'; }
-}
-
-async function uploadDigital(): Promise<void> {
-    const offeringId = selected.value?.offerings?.[0]?.id ?? selected.value?.offering?.id;
-    if (!offeringId || !digitalUpload.value) return;
-    const form = new FormData(); form.append('file', digitalUpload.value); form.append('access_duration_days', '365');
-    try { await api(`/admin/api/offerings/${offeringId}/digital-asset`, { method: 'POST', body: form }); notice.value = 'Private digital edition uploaded and enabled for sale.'; }
-    catch (caught) { error.value = caught instanceof Error ? caught.message : 'Digital upload failed.'; }
 }
 
 async function previewImport(): Promise<void> {
@@ -210,76 +172,7 @@ onMounted(() => navigate('dashboard'));
                 </section>
 
                 <section v-if="section === 'catalog'" data-admin-view="catalog">
-                    <div v-if="!selected" class="admin-section-bar">
-                        <div><span>{{ catalog.length }} catalogue records</span><p>Edit books, editions, prices, ISBNs, dates, and inventory.</p></div>
-                        <button class="button" @click="newItem"><span aria-hidden="true">＋</span> New catalogue item</button>
-                    </div>
-
-                    <div v-if="!selected" class="admin-panel">
-                        <div class="admin-panel-heading"><div><p class="eyebrow">Editorial library</p><h2>Published and working titles</h2></div><span>Metadata & commerce</span></div>
-                        <div class="admin-table-wrap">
-                            <table class="admin-table">
-                                <thead><tr><th>Title</th><th>Status</th><th>SKU / ISBN</th><th>Review</th><th><span class="sr-only">Actions</span></th></tr></thead>
-                                <tbody>
-                                    <tr v-for="item in catalog" :key="item.id">
-                                        <td><strong>{{ item.title }}</strong><small>{{ item.contributors?.[0]?.name || 'No author credited' }}</small></td>
-                                        <td><span class="status-pill" :class="statusClass(item.status)">{{ item.status }}</span></td>
-                                        <td><span class="admin-table-code">{{ item.offerings?.[0]?.sku || 'No SKU' }}</span><small>{{ item.offerings?.[0]?.book_edition?.isbn_13 || 'No ISBN' }}</small></td>
-                                        <td><span v-if="item.metadata_flags?.length" class="issue-count">{{ item.metadata_flags.length }}</span><span v-else class="admin-complete">Complete</span></td>
-                                        <td><button class="text-link" @click="editItem(item.id)">Edit title <span aria-hidden="true">→</span></button></td>
-                                    </tr>
-                                    <tr v-if="!catalog.length"><td colspan="5"><div class="admin-empty"><span>00</span><div><strong>No catalogue records yet.</strong><small>Create a title or import an existing WooCommerce catalogue.</small></div></div></td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div v-else class="admin-editor">
-                        <div class="admin-editor-head"><div><p class="eyebrow">{{ selected.id ? 'Catalogue record' : 'New publication' }}</p><h2>{{ selected.id ? selected.title : 'Build a new title' }}</h2><p>{{ selected.id ? 'Edit the editorial and commercial record below.' : 'Begin with the core publication details. You can add assets after saving.' }}</p></div><button class="button button-secondary" @click="selected = null">← Back to catalogue</button></div>
-
-                        <div class="admin-form-section">
-                            <div class="admin-form-section-head"><span>01</span><div><h3>Editorial record</h3><p>The title, authorship, copy, and publication state readers will see.</p></div></div>
-                            <div class="form-grid">
-                                <div class="field field-full"><label>Title</label><input v-model="selected.title" class="input"></div>
-                                <div class="field"><label>Author</label><input v-model="selected.author" class="input"></div>
-                                <div class="field"><label>URL slug</label><input v-model="selected.slug" class="input"></div>
-                                <div class="field field-full"><label>Short summary</label><textarea v-model="selected.summary" class="textarea textarea-small"></textarea></div>
-                                <div class="field field-full"><label>Full description</label><textarea v-model="selected.description" class="textarea"></textarea></div>
-                                <div class="field"><label>Publication status</label><select v-model="selected.status" class="select"><option>draft</option><option>published</option><option>archived</option></select></div>
-                                <label class="admin-check"><input v-model="selected.featured" type="checkbox"><span><strong>Featured title</strong><small>Give this book priority in public editorial placements.</small></span></label>
-                            </div>
-                        </div>
-
-                        <div class="admin-form-section">
-                            <div class="admin-form-section-head"><span>02</span><div><h3>Edition & commerce</h3><p>Format, identifiers, pricing, availability, and stock control.</p></div></div>
-                            <div class="form-grid">
-                                <div class="field"><label>Edition type</label><select v-model="selected.offering.kind" class="select"><option value="print_book">Print book</option><option value="ebook">E-book</option></select></div>
-                                <div class="field"><label>SKU</label><input v-model="selected.offering.sku" class="input"></div>
-                                <div class="field"><label>Price <span>cents CAD</span></label><input v-model.number="selected.offering.price_amount" class="input" type="number" min="0"></div>
-                                <div class="field"><label>ISBN-13</label><input v-model="selected.offering.isbn_13" class="input" maxlength="13"></div>
-                                <div class="field"><label>Publication date</label><input v-model="selected.offering.publication_date" class="input" type="date"></div>
-                                <div class="field"><label>Page count</label><input v-model.number="selected.offering.page_count" class="input" type="number"></div>
-                                <div class="field"><label>Stock count</label><input v-model.number="selected.offering.on_hand" class="input" type="number"></div>
-                                <div class="field"><label>Purchase mode</label><select v-model="selected.offering.purchase_mode" class="select"><option value="online">Online</option><option value="inquiry">Inquiry</option><option value="unavailable">Unavailable</option></select></div>
-                                <label class="admin-check field-full"><input v-model="selected.offering.track_inventory" type="checkbox"><span><strong>Track exact inventory</strong><small>Reduce available stock as physical orders are fulfilled.</small></span></label>
-                            </div>
-                        </div>
-
-                        <div class="admin-form-section">
-                            <div class="admin-form-section-head"><span>03</span><div><h3>Search & discovery</h3><p>Optional metadata for search engines and editorial sharing.</p></div></div>
-                            <div class="form-grid"><div class="field field-full"><label>SEO title</label><input v-model="selected.seo_title" class="input"></div><div class="field field-full"><label>SEO description</label><textarea v-model="selected.seo_description" class="textarea textarea-small"></textarea></div></div>
-                        </div>
-
-                        <div v-if="selected.id" class="admin-form-section">
-                            <div class="admin-form-section-head"><span>04</span><div><h3>Publication assets</h3><p>Replace the public cover or attach a protected digital edition.</p></div></div>
-                            <div class="admin-two-col admin-upload-grid">
-                                <div class="admin-upload-card"><div><p class="eyebrow">Public media</p><h4>Cover image</h4><p>JPEG, PNG, or WebP. Use the final production cover whenever possible.</p></div><input class="input" type="file" accept="image/jpeg,image/png,image/webp" @change="coverUpload = ($event.target as HTMLInputElement).files?.[0] ?? null"><button class="button button-small" :disabled="!coverUpload" @click="uploadCover">Upload cover</button></div>
-                                <div v-if="selected.offering.kind === 'ebook'" class="admin-upload-card"><div><p class="eyebrow">Private media</p><h4>Digital edition</h4><p>PDF or EPUB. Existing reader entitlements remain tied to their asset version.</p></div><input class="input" type="file" accept=".pdf,.epub" @change="digitalUpload = ($event.target as HTMLInputElement).files?.[0] ?? null"><button class="button button-small" :disabled="!digitalUpload" @click="uploadDigital">Upload private edition</button></div>
-                            </div>
-                        </div>
-
-                        <div class="admin-save-bar"><div><strong>Ready to publish your changes?</strong><small>The catalogue API and public pages update from this record.</small></div><button class="button" @click="saveItem">Save title</button></div>
-                    </div>
+                    <CatalogueManager ref="catalogueManager" />
                 </section>
 
                 <section v-if="section === 'import'" class="admin-panel admin-import" data-admin-view="import">

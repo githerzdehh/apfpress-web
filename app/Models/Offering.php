@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,7 +14,12 @@ class Offering extends Model
 
     protected function casts(): array
     {
-        return ['active' => 'boolean'];
+        return ['active' => 'boolean', 'position' => 'integer'];
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('active', true);
     }
 
     public function catalogItem(): BelongsTo
@@ -54,6 +60,15 @@ class Offering extends Model
     {
         if (! $this->active || $this->purchase_mode !== 'online' || $this->price_amount === null || ! $this->sku) {
             return false;
+        }
+
+        if (in_array($this->kind, ['ebook', 'digital_product'], true)) {
+            $hasCurrentAsset = $this->relationLoaded('digitalAssets')
+                ? $this->digitalAssets->contains(fn ($asset) => $asset->active && $asset->is_current)
+                : $this->digitalAssets()->where('active', true)->where('is_current', true)->exists();
+            if (! $hasCurrentAsset) {
+                return false;
+            }
         }
 
         if (! $this->inventory?->track_inventory) {

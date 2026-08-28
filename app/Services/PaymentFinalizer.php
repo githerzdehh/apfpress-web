@@ -46,7 +46,9 @@ class PaymentFinalizer
                     ]);
                 }
 
-                foreach ($item->offering?->digitalAssets->where('active', true) ?? [] as $asset) {
+                $asset = $item->offering?->digitalAssets
+                    ->first(fn ($asset) => $asset->active && $asset->is_current);
+                if ($asset) {
                     DigitalEntitlement::query()->firstOrCreate([
                         'user_id' => $order->user_id,
                         'order_item_id' => $item->id,

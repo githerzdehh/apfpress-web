@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\CatalogItem;
+use App\Models\DigitalAsset;
 use App\Models\Offering;
 use App\Models\Contributor;
 use App\Services\WooCommerceImporter;
@@ -36,13 +37,36 @@ class WooCommerceImporterTest extends TestCase
 
     public function test_imported_ebooks_require_a_private_asset_before_online_sale(): void
     {
-        app(WooCommerceImporter::class)->import([[
+        $source = [[
             'source_id' => '100', 'slug' => 'digital-book', 'title' => 'Digital Book',
             'author' => 'A. Scholar', 'kind' => 'ebook', 'price_amount' => 999,
             'currency' => 'CAD', 'purchasable' => true, 'in_stock' => true, 'categories' => [],
-        ]]);
+        ]];
+        app(WooCommerceImporter::class)->import($source);
 
-        $this->assertSame('inquiry', Offering::query()->firstOrFail()->purchase_mode);
+        $offering = Offering::query()->firstOrFail();
+        $this->assertSame('inquiry', $offering->purchase_mode);
+
+        $asset = DigitalAsset::query()->create([
+            'offering_id' => $offering->id,
+            'disk' => 'local',
+            'path' => 'digital/test/edition.pdf',
+            'file_name' => 'edition.pdf',
+            'mime_type' => 'application/pdf',
+            'version' => 1,
+            'active' => true,
+            'is_current' => false,
+        ]);
+        $offering->update(['purchase_mode' => 'online']);
+
+        app(WooCommerceImporter::class)->import($source);
+        $this->assertSame('inquiry', $offering->fresh()->purchase_mode);
+
+        $asset->update(['is_current' => true]);
+        $offering->update(['purchase_mode' => 'online']);
+        app(WooCommerceImporter::class)->import($source);
+
+        $this->assertSame('online', $offering->fresh()->purchase_mode);
     }
 
     public function test_it_removes_legacy_placeholder_copy_during_import(): void
