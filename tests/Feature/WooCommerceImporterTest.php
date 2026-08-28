@@ -60,7 +60,8 @@ class WooCommerceImporterTest extends TestCase
         $offering->update(['purchase_mode' => 'online']);
 
         app(WooCommerceImporter::class)->import($source);
-        $this->assertSame('inquiry', $offering->fresh()->purchase_mode);
+        $offering->refresh();
+        $this->assertSame('inquiry', $offering->purchase_mode);
 
         $asset->update(['is_current' => true]);
         $offering->update(['purchase_mode' => 'online']);
