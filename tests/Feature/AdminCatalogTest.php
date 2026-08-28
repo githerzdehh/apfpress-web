@@ -123,7 +123,7 @@ class AdminCatalogTest extends TestCase
         $this->actingAs($this->owner)->putJson("/admin/api/catalog/{$item->id}", $payload)->assertOk();
 
         $this->assertDatabaseHas('offerings', ['id' => $second->id, 'active' => false]);
-        $this->get("/books/{$item->slug}")->assertOk()->assertDontSee('Hidden EPUB');
+        $this->get('/books/'.$item->fresh()->slug)->assertOk()->assertDontSee('Hidden EPUB');
 
         $cart = Cart::query()->create(['currency' => 'CAD', 'status' => 'active']);
         $cart->items()->create(['offering_id' => $second->id, 'quantity' => 1]);

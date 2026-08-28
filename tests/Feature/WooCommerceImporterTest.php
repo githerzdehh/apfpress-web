@@ -64,6 +64,12 @@ class WooCommerceImporterTest extends TestCase
 
         $asset->update(['is_current' => true]);
         $offering->update(['purchase_mode' => 'online']);
+        $this->assertDatabaseHas('digital_assets', [
+            'id' => $asset->id,
+            'offering_id' => $offering->id,
+            'active' => true,
+            'is_current' => true,
+        ]);
         app(WooCommerceImporter::class)->import($source);
 
         $this->assertSame('online', $offering->fresh()->purchase_mode);

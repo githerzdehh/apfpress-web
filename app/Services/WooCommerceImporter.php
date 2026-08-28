@@ -7,6 +7,7 @@ use App\Models\BookEdition;
 use App\Models\CatalogItem;
 use App\Models\Category;
 use App\Models\Contributor;
+use App\Models\DigitalAsset;
 use App\Models\Inventory;
 use App\Models\MediaAsset;
 use App\Models\Offering;
@@ -143,15 +144,15 @@ class WooCommerceImporter
                 $sku = trim((string) ($source['sku'] ?? '')) ?: ($existingOffering?->sku ?: 'APF-WOO-'.str_pad($sourceId, 5, '0', STR_PAD_LEFT));
                 $hasSourcePrice = ($source['price_amount'] ?? null) !== null;
                 $isPurchasable = (bool) ($source['purchasable'] ?? false) && $effectivePrice !== null;
-                $hasCurrentDigitalAsset = $existingOffering?->digitalAssets()
-                    ->where('active', true)->where('is_current', true)->exists() ?? false;
+                $preserveOnlineDigitalSale = $kind === 'ebook'
+                    && $existingOffering?->purchase_mode === 'online'
+                    && DigitalAsset::query()->where('offering_id', $existingOffering->id)
+                        ->where('active', true)->where('is_current', true)->exists();
                 $purchaseMode = $hasSourcePrice
                     ? ($isPurchasable && $kind !== 'ebook' ? 'online' : 'inquiry')
                     : ($existingOffering?->purchase_mode ?: 'inquiry');
                 if ($kind === 'ebook') {
-                    $purchaseMode = $hasCurrentDigitalAsset && $existingOffering?->purchase_mode === 'online'
-                        ? 'online'
-                        : 'inquiry';
+                    $purchaseMode = $preserveOnlineDigitalSale ? 'online' : 'inquiry';
                 }
                 $offering = Offering::query()->updateOrCreate(
                     ['catalog_item_id' => $item->id, 'kind' => $kind],
