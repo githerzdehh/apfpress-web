@@ -70,6 +70,7 @@ test('catalogue editor keeps save and validation feedback in reach', async ({ pa
     await page.locator('[data-section="catalog"]').click();
     await expect(page.getByText('1 catalogue records')).toBeVisible();
     const editTitle = page.getByRole('button', { name: /Edit title/i });
+    await editTitle.scrollIntoViewIfNeeded();
     await expect(editTitle).toBeInViewport();
     await editTitle.click();
     await expect(page.locator('.admin-save-bar-sticky')).toBeVisible();
