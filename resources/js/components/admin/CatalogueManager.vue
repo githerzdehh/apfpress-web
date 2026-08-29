@@ -299,7 +299,7 @@ onBeforeUnmount(() => {
             <button class="button button-secondary" type="submit" :disabled="loading">Apply filters</button>
         </form>
         <div class="admin-table-wrap">
-            <table class="admin-table">
+            <table class="admin-table admin-catalog-table">
                 <thead><tr><th>Title</th><th>Status</th><th>Edition</th><th>Review</th><th><span class="sr-only">Actions</span></th></tr></thead>
                 <tbody>
                     <tr v-for="item in catalog" :key="item.id">

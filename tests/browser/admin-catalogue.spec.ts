@@ -69,7 +69,9 @@ test('catalogue editor keeps save and validation feedback in reach', async ({ pa
 
     await page.locator('[data-section="catalog"]').click();
     await expect(page.getByText('1 catalogue records')).toBeVisible();
-    await page.getByRole('button', { name: /Edit title/i }).click();
+    const editTitle = page.getByRole('button', { name: /Edit title/i });
+    await expect(editTitle).toBeInViewport();
+    await editTitle.click();
     await expect(page.locator('.admin-save-bar-sticky')).toBeVisible();
 
     await page.getByRole('button', { name: /Editions/ }).click();
@@ -78,11 +80,10 @@ test('catalogue editor keeps save and validation feedback in reach', async ({ pa
     await page.getByLabel('Purchase mode').selectOption('online');
     await page.getByLabel(/SKU/).fill('');
     await page.getByLabel(/Price/).fill('');
-    const scrollBefore = await page.evaluate(() => window.scrollY);
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.getByText('A SKU is required for online sale.')).toBeVisible();
-    await expect(page.getByText(/2 fields need attention/)).toBeVisible();
-    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+    await expect(page.getByText(/2 fields need attention/)).toBeInViewport();
+    await expect(page.locator('.admin-save-bar-sticky')).toBeInViewport();
 
     await page.getByLabel(/SKU/).fill('PW-ONLINE-001');
     await page.getByLabel(/Price/).fill('24.99');

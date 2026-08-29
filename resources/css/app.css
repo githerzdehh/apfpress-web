@@ -2451,6 +2451,21 @@ body.admin-site {
 .admin-table tbody tr:hover {
     background: #f3f6f7;
 }
+.admin-catalog-table th:last-child,
+.admin-catalog-table td:last-child {
+    position: sticky;
+    z-index: 1;
+    right: 0;
+    background: var(--paper-light);
+    box-shadow: -1px 0 var(--line);
+}
+.admin-catalog-table th:last-child {
+    z-index: 2;
+    background: #eef1f2;
+}
+.admin-catalog-table tbody tr:hover td:last-child {
+    background: #f3f6f7;
+}
 .admin-table td > strong {
     font-family: var(--serif);
     font-size: 0.92rem;
