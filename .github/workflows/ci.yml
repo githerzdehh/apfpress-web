@@ -113,7 +113,7 @@ jobs:
 
       - name: Run rendered browser journeys
         run: |
-          APP_URL=http://127.0.0.1:8080 php artisan serve --host=127.0.0.1 --port=8080 > storage/logs/ci-browser-server.log 2>&1 &
+          APP_URL=http://127.0.0.1:8080 SESSION_DRIVER=database php artisan serve --host=127.0.0.1 --port=8080 > storage/logs/ci-browser-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           for attempt in {1..30}; do
@@ -126,4 +126,7 @@ jobs:
             fi
             sleep 1
           done
-          APFPRESS_BASE_URL=http://127.0.0.1:8080 npm run test:browser
+          if ! APFPRESS_BASE_URL=http://127.0.0.1:8080 npm run test:browser; then
+            cat storage/logs/ci-browser-server.log
+            exit 1
+          fi
