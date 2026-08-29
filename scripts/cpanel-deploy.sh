@@ -16,6 +16,21 @@ fail() {
     exit 1
 }
 
+check_url() {
+    local url="$1"
+
+    for attempt in {1..5}; do
+        if curl --fail --silent --show-error --max-time 20 "$url" >/dev/null; then
+            return 0
+        fi
+        if [[ "$attempt" -lt 5 ]]; then
+            sleep 2
+        fi
+    done
+
+    fail "post-deployment health check failed for ${url}"
+}
+
 env_value() {
     local key="$1"
     local value
@@ -45,6 +60,7 @@ cd "$APF_APP_ROOT"
 [[ "$(id -un)" == "apfpress" ]] || fail "run the deployment as the apfpress cPanel user"
 [[ -x "$APF_PHP_BINARY" ]] || fail "PHP 8.3 was not found at ${APF_PHP_BINARY}"
 [[ -r "$APF_COMPOSER_BINARY" ]] || fail "Composer was not found at ${APF_COMPOSER_BINARY}"
+command -v curl >/dev/null 2>&1 || fail "curl is required for post-deployment health checks"
 [[ -f .env ]] || fail "create the server-only .env file before deploying"
 
 APF_DEPLOY_TARGET="staging"
@@ -110,6 +126,12 @@ fi
 
 "$APF_PHP_BINARY" artisan up
 APF_MAINTENANCE_ENABLED=false
+
+APF_APP_URL="$(env_value APP_URL)"
+APF_APP_URL="${APF_APP_URL%/}"
+check_url "${APF_APP_URL}/up"
+check_url "${APF_APP_URL}/api/v1/catalog"
+
 trap - ERR
 
 echo "APF Press ${APF_DEPLOY_TARGET} deployment completed successfully."

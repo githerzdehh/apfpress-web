@@ -21,7 +21,11 @@ class CatalogController extends Controller
         ]);
 
         $query = CatalogItem::query()->published()->where('type', 'book')
-            ->with(['contributors', 'categories', 'media', 'offerings.bookEdition', 'offerings.inventory']);
+            ->with([
+                'contributors', 'categories', 'media',
+                'offerings' => fn ($query) => $query->active()->orderBy('position'),
+                'offerings.bookEdition', 'offerings.inventory', 'offerings.digitalAssets',
+            ]);
 
         $query->when($filters['q'] ?? null, function (Builder $query, string $search): void {
             $query->where(function (Builder $query) use ($search): void {
@@ -30,13 +34,13 @@ class CatalogController extends Controller
                     ->orWhereHas('contributors', fn (Builder $query) => $query->where('name', 'like', '%'.$search.'%'));
             });
         });
-        $query->when($filters['format'] ?? null, fn (Builder $query, string $format) => $query->whereHas('offerings', fn (Builder $query) => $query->where('kind', $format)));
+        $query->when($filters['format'] ?? null, fn (Builder $query, string $format) => $query->whereHas('offerings', fn (Builder $query) => $query->active()->where('kind', $format)));
         $query->when($filters['category'] ?? null, fn (Builder $query, string $category) => $query->whereHas('categories', fn (Builder $query) => $query->where('slug', $category)));
 
         match ($filters['sort'] ?? 'newest') {
             'title' => $query->orderBy('title'),
-            'price_low' => $query->orderBy(Offering::select('price_amount')->whereColumn('catalog_item_id', 'catalog_items.id')->orderBy('price_amount')->limit(1)),
-            'price_high' => $query->orderByDesc(Offering::select('price_amount')->whereColumn('catalog_item_id', 'catalog_items.id')->orderByDesc('price_amount')->limit(1)),
+            'price_low' => $query->orderBy(Offering::select('price_amount')->whereColumn('catalog_item_id', 'catalog_items.id')->active()->orderBy('price_amount')->limit(1)),
+            'price_high' => $query->orderByDesc(Offering::select('price_amount')->whereColumn('catalog_item_id', 'catalog_items.id')->active()->orderByDesc('price_amount')->limit(1)),
             default => $query->orderByDesc('published_at')->orderBy('title'),
         };
 
@@ -50,11 +54,19 @@ class CatalogController extends Controller
     public function show(CatalogItem $catalogItem): View
     {
         abort_unless($catalogItem->status === 'published' && $catalogItem->type === 'book', 404);
-        $catalogItem->load(['contributors', 'categories', 'media', 'bookDetails', 'offerings.bookEdition', 'offerings.inventory']);
+        $catalogItem->load([
+            'contributors', 'categories', 'media', 'bookDetails',
+            'offerings' => fn ($query) => $query->active()->orderBy('position'),
+            'offerings.bookEdition', 'offerings.inventory', 'offerings.digitalAssets',
+        ]);
 
         $related = CatalogItem::query()->published()->where('type', 'book')->whereKeyNot($catalogItem->id)
             ->when($catalogItem->categories->isNotEmpty(), fn (Builder $query) => $query->whereHas('categories', fn (Builder $query) => $query->whereIn('categories.id', $catalogItem->categories->pluck('id'))))
-            ->with(['contributors', 'media', 'offerings.inventory'])->limit(3)->get();
+            ->with([
+                'contributors', 'media',
+                'offerings' => fn ($query) => $query->active()->orderBy('position'),
+                'offerings.inventory',
+            ])->limit(3)->get();
 
         return view('catalog.show', compact('catalogItem', 'related'));
     }

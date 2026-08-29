@@ -61,6 +61,14 @@ printf '%s\n' APF_PRESS_PRODUCTION > /home/apfpress/public_html/.apfpress-deploy
 6. Set `apfpress.com` to PHP 8.3-FPM, change `.deploy-target` to `production`, and run **Deploy HEAD Commit**. The marker, target, production URL, production environment, MySQL credentials, secure cookies, disabled debug mode, generated key, and removed seed password are all required before the script will sync public files.
 7. Verify `https://apfpress.com/up`, public pages, admin access, email, storage, and sandbox webhooks before entering live Stripe or PayPal credentials.
 
+The deployment script now checks `/up` and `/api/v1/catalog` after bringing Laravel back online. Before enabling live payment credentials, also run the rendered Playwright suite against production with at least three workers and require two consecutive runs with no HTTP 5xx responses:
+
+```bash
+APFPRESS_BASE_URL=https://apfpress.com npx playwright test tests/browser/public-site.spec.ts --workers=3
+```
+
+If a concurrent smoke run reports intermittent 500 responses while sequential requests pass, stop the release and inspect Laravel, PHP-FPM, Apache, and MySQL logs for the same timestamp. In particular, verify the MySQL user's connection allowance has headroom above the PHP-FPM worker count plus the queue worker and scheduler, and confirm the database-backed session and cache tables are available.
+
 ## 5. Rollback and operations
 
 If launch verification fails, leave the Laravel application in maintenance, restore the archived WordPress files to `public_html`, reassign `apfpress.com` to PHP 8.0, and keep using the untouched WordPress database. The Laravel production database remains separate.

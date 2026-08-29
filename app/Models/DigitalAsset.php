@@ -10,7 +10,7 @@ class DigitalAsset extends Model
 
     protected function casts(): array
     {
-        return ['active' => 'boolean'];
+        return ['active' => 'boolean', 'is_current' => 'boolean', 'version' => 'integer'];
     }
 
     public function offering()

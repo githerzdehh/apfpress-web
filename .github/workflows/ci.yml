@@ -107,3 +107,26 @@ jobs:
 
       - name: Compile application routes
         run: php artisan route:list --except-vendor
+
+      - name: Install browser runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Run rendered browser journeys
+        run: |
+          APP_URL=http://127.0.0.1:8080 SESSION_DRIVER=database php artisan serve --host=127.0.0.1 --port=8080 > storage/logs/ci-browser-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/up >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 30 ]]; then
+              cat storage/logs/ci-browser-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if ! APFPRESS_BASE_URL=http://127.0.0.1:8080 npm run test:browser; then
+            cat storage/logs/ci-browser-server.log
+            exit 1
+          fi

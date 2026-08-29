@@ -12,7 +12,11 @@ class CatalogController extends Controller
     public function index(): AnonymousResourceCollection
     {
         $items = CatalogItem::query()->published()->where('type', 'book')
-            ->with(['contributors', 'categories', 'media', 'offerings.bookEdition', 'offerings.inventory'])
+            ->with([
+                'contributors', 'categories', 'media',
+                'offerings' => fn ($query) => $query->active()->orderBy('position'),
+                'offerings.bookEdition', 'offerings.inventory', 'offerings.digitalAssets',
+            ])
             ->orderBy('title')->paginate(24);
 
         return CatalogItemResource::collection($items);
@@ -20,8 +24,12 @@ class CatalogController extends Controller
 
     public function show(CatalogItem $catalogItem): CatalogItemResource
     {
-        abort_unless($catalogItem->status === 'published', 404);
+        abort_unless($catalogItem->status === 'published' && $catalogItem->type === 'book', 404);
 
-        return new CatalogItemResource($catalogItem->load(['contributors', 'categories', 'media', 'offerings.bookEdition', 'offerings.inventory']));
+        return new CatalogItemResource($catalogItem->load([
+            'contributors', 'categories', 'media',
+            'offerings' => fn ($query) => $query->active()->orderBy('position'),
+            'offerings.bookEdition', 'offerings.inventory', 'offerings.digitalAssets',
+        ]));
     }
 }

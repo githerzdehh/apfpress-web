@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class MediaController extends Controller
 {
@@ -39,18 +40,38 @@ class MediaController extends Controller
         ]);
         $file = $request->file('file');
         $path = $file->store('digital/'.$offering->id, 'local');
-        $asset = DigitalAsset::query()->where('offering_id', $offering->id)->where('active', true)->first();
-        $asset ??= new DigitalAsset(['offering_id' => $offering->id, 'version' => 0, 'active' => true]);
-        $asset->fill([
-            'disk' => 'local', 'path' => $path, 'file_name' => $file->getClientOriginalName(),
-            'mime_type' => $file->getMimeType() ?: 'application/octet-stream', 'size_bytes' => $file->getSize(),
-            'checksum' => hash_file('sha256', $file->getRealPath()), 'version' => $asset->version + 1, 'active' => true,
-        ])->save();
-        $offering->update([
-            'access_duration_days' => $request->integer('access_duration_days') ?: config('apf.digital_access_days'),
-            'purchase_mode' => $offering->price_amount !== null && $offering->sku ? 'online' : 'inquiry',
-        ]);
+        try {
+            $asset = DB::transaction(function () use ($request, $offering, $file, $path): DigitalAsset {
+                $version = (int) DigitalAsset::query()->where('offering_id', $offering->id)->lockForUpdate()->max('version');
+                DigitalAsset::query()->where('offering_id', $offering->id)->update(['is_current' => false]);
+                $asset = DigitalAsset::query()->create([
+                    'offering_id' => $offering->id,
+                    'disk' => 'local',
+                    'path' => $path,
+                    'file_name' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
+                    'size_bytes' => $file->getSize(),
+                    'checksum' => hash_file('sha256', $file->getRealPath()),
+                    'version' => $version + 1,
+                    'active' => true,
+                    'is_current' => true,
+                ]);
+                $offering->update([
+                    'access_duration_days' => $request->integer('access_duration_days') ?: config('apf.digital_access_days'),
+                ]);
 
-        return response()->json(['id' => $asset->id, 'file_name' => $asset->file_name, 'version' => $asset->version, 'purchase_mode' => $offering->fresh()->purchase_mode], 201);
+                return $asset;
+            });
+        } catch (Throwable $exception) {
+            Storage::disk('local')->delete($path);
+            throw $exception;
+        }
+
+        return response()->json([
+            'id' => $asset->id,
+            'file_name' => $asset->file_name,
+            'version' => $asset->version,
+            'purchase_mode' => $offering->fresh()->purchase_mode,
+        ], 201);
     }
 }

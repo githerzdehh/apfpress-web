@@ -1,5 +1,23 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
+const baseUrl = new URL(process.env.APFPRESS_BASE_URL ?? 'http://localhost:8080');
+const localCoverFixture = `
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="667" viewBox="0 0 480 667">
+    <rect width="480" height="667" fill="#082f49"/>
+    <rect x="36" y="36" width="408" height="595" fill="#f5f0e8"/>
+    <path d="M72 154h336M72 190h250M72 518h210" stroke="#0050a0" stroke-width="18"/>
+</svg>`;
+
+test.beforeEach(async ({ page }) => {
+    if (['localhost', '127.0.0.1'].includes(baseUrl.hostname)) {
+        await page.route('https://apfpress.com/wp-content/uploads/**', (route) => route.fulfill({
+            status: 200,
+            contentType: 'image/svg+xml',
+            body: localCoverFixture,
+        }));
+    }
+});
+
 function monitorBrowser(page: Page): { browserErrors: string[]; localFailures: string[] } {
     const browserErrors: string[] = [];
     const localFailures: string[] = [];

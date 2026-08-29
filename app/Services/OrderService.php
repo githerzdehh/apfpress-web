@@ -36,6 +36,9 @@ class OrderService
 
             foreach ($cart->items as $cartItem) {
                 $offering = $cartItem->offering;
+                if (! $offering?->isAvailable()) {
+                    throw ValidationException::withMessages(['cart' => 'An edition in your cart is no longer available. Remove it or choose another edition.']);
+                }
                 $inventory = $offering->inventory()->lockForUpdate()->first();
                 if ($inventory?->track_inventory && ! $inventory->allow_backorder && ($inventory->on_hand - $inventory->reserved) < $cartItem->quantity) {
                     throw ValidationException::withMessages(['cart' => 'A title in your cart no longer has enough stock. Please update the quantity.']);

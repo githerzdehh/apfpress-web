@@ -7,6 +7,7 @@ use App\Models\BookEdition;
 use App\Models\CatalogItem;
 use App\Models\Category;
 use App\Models\Contributor;
+use App\Models\DigitalAsset;
 use App\Models\Inventory;
 use App\Models\MediaAsset;
 use App\Models\Offering;
@@ -143,18 +144,26 @@ class WooCommerceImporter
                 $sku = trim((string) ($source['sku'] ?? '')) ?: ($existingOffering?->sku ?: 'APF-WOO-'.str_pad($sourceId, 5, '0', STR_PAD_LEFT));
                 $hasSourcePrice = ($source['price_amount'] ?? null) !== null;
                 $isPurchasable = (bool) ($source['purchasable'] ?? false) && $effectivePrice !== null;
+                $preserveOnlineDigitalSale = $kind === 'ebook'
+                    && $existingOffering?->purchase_mode === 'online'
+                    && DigitalAsset::query()->where('offering_id', $existingOffering->id)
+                        ->where('active', true)->where('is_current', true)->exists();
                 $purchaseMode = $hasSourcePrice
                     ? ($isPurchasable && $kind !== 'ebook' ? 'online' : 'inquiry')
                     : ($existingOffering?->purchase_mode ?: 'inquiry');
+                if ($kind === 'ebook') {
+                    $purchaseMode = $preserveOnlineDigitalSale ? 'online' : 'inquiry';
+                }
                 $offering = Offering::query()->updateOrCreate(
                     ['catalog_item_id' => $item->id, 'kind' => $kind],
                     [
+                        'position' => $existingOffering?->position ?? ((int) $item->offerings()->max('position') + ($item->offerings()->exists() ? 1 : 0)),
                         'name' => $kind === 'ebook' ? 'Digital edition' : 'Print edition',
                         'sku' => $sku,
                         'price_amount' => $effectivePrice,
                         'currency' => strtoupper((string) ($source['currency'] ?? 'CAD')),
-                        // Imported ebooks stay inquiry-only until a private digital asset is attached.
-                        'purchase_mode' => $kind === 'ebook' && ! $existingOffering?->digitalAssets()->where('active', true)->exists() ? 'inquiry' : $purchaseMode,
+                        // Imported ebooks stay inquiry-only until staff attach a current private asset and enable online sale.
+                        'purchase_mode' => $purchaseMode,
                         'tax_class' => 'books',
                         'active' => true,
                         'access_duration_days' => $kind === 'ebook' ? (int) config('apf.digital_access_days', 365) : null,

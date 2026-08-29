@@ -22,7 +22,8 @@ class PaymentFinalizerTest extends TestCase
         $item = CatalogItem::query()->create(['type' => 'book', 'slug' => 'ebook', 'title' => 'An E-book', 'status' => 'published']);
         $offering = $item->offerings()->create(['kind' => 'ebook', 'name' => 'PDF', 'sku' => 'EB-001', 'price_amount' => 999, 'currency' => 'CAD', 'purchase_mode' => 'online', 'access_duration_days' => 30]);
         Inventory::query()->create(['offering_id' => $offering->id, 'on_hand' => 10, 'reserved' => 1, 'track_inventory' => true]);
-        $asset = DigitalAsset::query()->create(['offering_id' => $offering->id, 'path' => 'digital/book.pdf', 'file_name' => 'book.pdf', 'mime_type' => 'application/pdf']);
+        $oldAsset = DigitalAsset::query()->create(['offering_id' => $offering->id, 'path' => 'digital/book-v1.pdf', 'file_name' => 'book-v1.pdf', 'mime_type' => 'application/pdf', 'version' => 1, 'is_current' => false]);
+        $asset = DigitalAsset::query()->create(['offering_id' => $offering->id, 'path' => 'digital/book.pdf', 'file_name' => 'book.pdf', 'mime_type' => 'application/pdf', 'version' => 2, 'is_current' => true]);
         $order = Order::query()->create(['number' => 'APF-TEST-1', 'user_id' => $user->id, 'email' => $user->email, 'currency' => 'CAD', 'subtotal_amount' => 999, 'total_amount' => 999]);
         $orderItem = $order->items()->create(['offering_id' => $offering->id, 'sku' => 'EB-001', 'name' => 'An E-book — PDF', 'kind' => 'ebook', 'quantity' => 1, 'unit_amount' => 999, 'total_amount' => 999]);
         $payment = Payment::query()->create(['order_id' => $order->id, 'provider' => 'stripe', 'status' => 'pending', 'amount' => 999, 'currency' => 'CAD']);
@@ -32,6 +33,7 @@ class PaymentFinalizerTest extends TestCase
         $this->assertDatabaseHas('orders', ['id' => $order->id, 'payment_status' => 'paid']);
         $this->assertDatabaseHas('inventories', ['offering_id' => $offering->id, 'on_hand' => 9, 'reserved' => 0]);
         $this->assertDatabaseHas('digital_entitlements', ['user_id' => $user->id, 'order_item_id' => $orderItem->id, 'digital_asset_id' => $asset->id]);
+        $this->assertDatabaseMissing('digital_entitlements', ['digital_asset_id' => $oldAsset->id]);
         $this->assertTrue($user->fresh()->digitalEntitlements()->first()->expires_at->isFuture());
     }
 }
